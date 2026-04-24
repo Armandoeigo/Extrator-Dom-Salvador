@@ -13,9 +13,9 @@ st.write("Selecione o período abaixo para buscar os Decretos Simples no Diário
 
 col1, col2 = st.columns(2)
 with col1:
-    data_inicio = st.date_input("Data de Início")
+    data_inicio = st.date_input("Data de Início", format="DD/MM/YYYY")
 with col2:
-    data_fim = st.date_input("Data Final")
+    data_fim = st.date_input("Data Final", format="DD/MM/YYYY")
 
 # ==========================================
 # 2. AÇÃO DO BOTÃO
