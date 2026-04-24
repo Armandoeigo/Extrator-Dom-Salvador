@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import re
-from datetime import datetime
+from datetime import datetime, date
 
 # ==========================================
 # 1. INTERFACE DO SITE
@@ -11,11 +11,14 @@ st.set_page_config(page_title="Extrator DOM Salvador", page_icon="📑")
 st.title("🔍 Extrator de Decretos Simples")
 st.write("Selecione o período abaixo para buscar os Decretos Simples no Diário Oficial de Salvador.")
 
+data_minima = date(2001, 1, 1) # Bloqueia antes de 2001
+data_maxima = date.today()     # Trava no dia de hoje (não permite futuro)
+
 col1, col2 = st.columns(2)
 with col1:
-    data_inicio = st.date_input("Data de Início", format="DD/MM/YYYY")
+    data_inicio = st.date_input("Data de Início", min_value=data_minima, max_value=data_maxima, format="DD/MM/YYYY")
 with col2:
-    data_fim = st.date_input("Data Final", format="DD/MM/YYYY")
+    data_fim = st.date_input("Data Final", min_value=data_minima, max_value=data_maxima, format="DD/MM/YYYY")
 
 # ==========================================
 # 2. AÇÃO DO BOTÃO
