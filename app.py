@@ -11,8 +11,9 @@ st.set_page_config(page_title="Extrator DOM Salvador", page_icon="📑")
 st.title("🔍 Extrator de Decretos Simples")
 st.write("Selecione o período abaixo para buscar os Decretos Simples no Diário Oficial de Salvador.")
 
-data_minima = date(2001, 1, 1) # Bloqueia antes de 2001
-data_maxima = date.today()     # Trava no dia de hoje (não permite futuro)
+# Definindo os limites do calendário (de 2001 até hoje)
+data_minima = date(2001, 1, 1)
+data_maxima = date.today()
 
 col1, col2 = st.columns(2)
 with col1:
@@ -28,11 +29,11 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     str_inicio = data_inicio.strftime("%Y-%m-%d")
     str_fim = data_fim.strftime("%Y-%m-%d")
     
-    # Mensagem de carregamento com data no padrão brasileiro
     with st.spinner(f"Buscando diários de {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}..."):
         
         url_api = "https://api.queridodiario.ok.org.br/api/gazettes/"
         
+        # Paginação: Garante que pegamos todos os diários do período
         lista_diarios = []
         offset = 0 
         
@@ -58,7 +59,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                     break 
                     
             except Exception as e:
-                st.error(f"Ocorreu um erro ao conectar com o sistema: {e}")
+                st.error(f"Erro de conexão com a API: {e}")
                 break
 
         # ==========================================
@@ -66,7 +67,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
         # ==========================================
         if len(lista_diarios) > 0:
             
-            # Força a ordem cronológica (do mais antigo pro mais novo)
+            # Ordenação Cronológica (do mais antigo para o mais novo)
             lista_diarios = sorted(lista_diarios, key=lambda x: x["date"])
             
             texto_para_salvar = f"RELATÓRIO DE DECRETOS SIMPLES - SALVADOR\n"
@@ -84,16 +85,13 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                 try:
                     texto_completo = requests.get(url_txt).text
                     
-                    # ----------------------------------------------------
-                    
+                    # 1. Identifica o número da Edição do DOM
                     padrao_numero = r"N\s*[º°oO]\s*(\d{1,3}(?:\.\d{3})?|\d+)"
                     busca_numero = re.search(padrao_numero, texto_completo[:1000], re.IGNORECASE)
-                    
-                    # Se achar, guarda o número. Se não achar, avisa que não identificou.
                     numero_dom = busca_numero.group(1) if busca_numero else "Não identificado"
-                    # ----------------------------------------------------
                     
-                    # Recorte dos Decretos Simples
+                    # 2. Recorta apenas o bloco de Decretos Simples
+                    # Parada inteligente: busca palavras em MAIÚSCULO no início da linha
                     parada = r"\n\s*(?:SECRETARIA|GABINETE|PROCURADORIA|CONTROLADORIA|SUPERINTENDÊNCIA|FUNDAÇÃO|LICITAÇÕES|CONSELHO)\b"
                     padrao = rf"DECRETOS SIMPLES(.*?)({parada})"
                     
@@ -103,11 +101,13 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                         maior_bloco = max(blocos, key=lambda x: len(x[0]))
                         conteudo = maior_bloco[0].strip()
                         
-                        # Adicionando o NÚMERO DO DOM na formatação do título do bloco
+                        # --- FORMATAÇÃO COM A BARRA VERMELHA (OPÇÃO 1) ---
+                        texto_para_salvar += "🟥"*30 + "\n"
                         texto_para_salvar += f"📅 DATA: {data_pub} | EDIÇÃO Nº: {numero_dom}\n"
-                        texto_para_salvar += "-"*60 + "\n"
-                        texto_para_salvar += conteudo + "\n"
-                        texto_para_salvar += "\n" + "="*60 + "\n\n"
+                        texto_para_salvar += "🟥"*30 + "\n\n"
+                        
+                        texto_para_salvar += conteudo + "\n\n"
+                        texto_para_salvar += "\n\n\n" # Espaço extra entre diários
                 except:
                     pass 
                 
@@ -115,7 +115,8 @@ if st.button("🚀 Buscar e Gerar Relatório"):
 
             st.success(f"✅ Relatório gerado com sucesso! Encontrados {total} diários.")
             
-            nome_arquivo = f"Decretos_{str_inicio}_a_{str_fim}.txt"
+            # 4. BOTÃO DE DOWNLOAD
+            nome_arquivo = f"Decretos_Salvador_{str_inicio}_a_{str_fim}.txt"
             st.download_button(
                 label="📥 Baixar Arquivo .TXT",
                 data=texto_para_salvar,
