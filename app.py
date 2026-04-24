@@ -25,7 +25,8 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     str_inicio = data_inicio.strftime("%Y-%m-%d")
     str_fim = data_fim.strftime("%Y-%m-%d")
     
-    with st.spinner(f"Buscando diários de {str_inicio} até {str_fim}..."):
+    # Mensagem de carregamento com data no padrão brasileiro
+    with st.spinner(f"Buscando diários de {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}..."):
         
         url_api = "https://api.queridodiario.ok.org.br/api/gazettes/"
         
@@ -62,25 +63,34 @@ if st.button("🚀 Buscar e Gerar Relatório"):
         # ==========================================
         if len(lista_diarios) > 0:
             
+            # Força a ordem cronológica (do mais antigo pro mais novo)
             lista_diarios = sorted(lista_diarios, key=lambda x: x["date"])
-            # ----------------------------------
             
             texto_para_salvar = f"RELATÓRIO DE DECRETOS SIMPLES - SALVADOR\n"
-            texto_para_salvar += f"PERÍODO: {str_inicio} a {str_fim}\n"
+            texto_para_salvar += f"PERÍODO: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}\n"
             texto_para_salvar += f"GERADO EM: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
             texto_para_salvar += "="*60 + "\n\n"
 
             progresso = st.progress(0)
             total = len(lista_diarios)
             
-            # Note que removemos o "reversed()" daqui de baixo, 
-            # pois a lista já está perfeitamente ordenada
             for i, diario in enumerate(lista_diarios):
                 data_pub = diario["date"]
                 url_txt = diario["txt_url"]
                 
                 try:
                     texto_completo = requests.get(url_txt).text
+                    
+                    # ----------------------------------------------------
+                    
+                    padrao_numero = r"N\s*[º°oO]\s*(\d{1,3}(?:\.\d{3})?|\d+)"
+                    busca_numero = re.search(padrao_numero, texto_completo[:1000], re.IGNORECASE)
+                    
+                    # Se achar, guarda o número. Se não achar, avisa que não identificou.
+                    numero_dom = busca_numero.group(1) if busca_numero else "Não identificado"
+                    # ----------------------------------------------------
+                    
+                    # Recorte dos Decretos Simples
                     parada = r"\n\s*(?:SECRETARIA|GABINETE|PROCURADORIA|CONTROLADORIA|SUPERINTENDÊNCIA|FUNDAÇÃO|LICITAÇÕES|CONSELHO)\b"
                     padrao = rf"DECRETOS SIMPLES(.*?)({parada})"
                     
@@ -90,7 +100,9 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                         maior_bloco = max(blocos, key=lambda x: len(x[0]))
                         conteudo = maior_bloco[0].strip()
                         
-                        texto_para_salvar += f"📅 DATA DA PUBLICAÇÃO: {data_pub}\n" + "-"*40 + "\n"
+                        # Adicionando o NÚMERO DO DOM na formatação do título do bloco
+                        texto_para_salvar += f"📅 DATA: {data_pub} | EDIÇÃO Nº: {numero_dom}\n"
+                        texto_para_salvar += "-"*60 + "\n"
                         texto_para_salvar += conteudo + "\n"
                         texto_para_salvar += "\n" + "="*60 + "\n\n"
                 except:
