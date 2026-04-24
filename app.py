@@ -29,9 +29,8 @@ if st.button("🚀 Buscar e Gerar Relatório"):
         
         url_api = "https://api.queridodiario.ok.org.br/api/gazettes/"
         
-        # --- A MÁGICA DA PAGINAÇÃO AQUI ---
         lista_diarios = []
-        offset = 0 # O "marcador de página" (quantos pular)
+        offset = 0 
         
         while True:
             parametros = {
@@ -39,8 +38,8 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                 "querystring": '"DECRETOS SIMPLES"',
                 "published_since": str_inicio,
                 "published_until": str_fim,
-                "size": 50,       # Puxa 50 de uma vez para ir mais rápido
-                "offset": offset  # Diz a partir de qual resultado começar
+                "size": 50,       
+                "offset": offset  
             }
 
             try:
@@ -49,30 +48,37 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                 dados = resposta_api.json()
 
                 if "gazettes" in dados and len(dados["gazettes"]) > 0:
-                    # Adiciona os diários encontrados na nossa lista gigante
                     lista_diarios.extend(dados["gazettes"])
-                    offset += 50 # Prepara para pular os 50 que já pegamos
+                    offset += 50 
                 else:
-                    break # Se não veio nada, as páginas acabaram! Sai do laço.
+                    break 
                     
             except Exception as e:
                 st.error(f"Ocorreu um erro ao conectar com o sistema: {e}")
                 break
-        # ----------------------------------
 
-        # Se encontrou algum diário em todas as páginas somadas...
+        # ==========================================
+        # 3. PROCESSAMENTO E ORDENAÇÃO
+        # ==========================================
         if len(lista_diarios) > 0:
+            
+            # --- A MÁGICA DA ORDENAÇÃO AQUI ---
+            # Isso força a lista a ficar em ordem cronológica (do mais antigo pro mais novo)
+            # independentemente de como o Querido Diário nos entregou os dados.
+            lista_diarios = sorted(lista_diarios, key=lambda x: x["date"])
+            # ----------------------------------
             
             texto_para_salvar = f"RELATÓRIO DE DECRETOS SIMPLES - SALVADOR\n"
             texto_para_salvar += f"PERÍODO: {str_inicio} a {str_fim}\n"
             texto_para_salvar += f"GERADO EM: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
             texto_para_salvar += "="*60 + "\n\n"
 
-            # Barra de progresso visual
             progresso = st.progress(0)
             total = len(lista_diarios)
             
-            for i, diario in enumerate(reversed(lista_diarios)):
+            # Note que removemos o "reversed()" daqui de baixo, 
+            # pois a lista já está perfeitamente ordenada
+            for i, diario in enumerate(lista_diarios):
                 data_pub = diario["date"]
                 url_txt = diario["txt_url"]
                 
@@ -91,14 +97,12 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                         texto_para_salvar += conteudo + "\n"
                         texto_para_salvar += "\n" + "="*60 + "\n\n"
                 except:
-                    pass # Se der erro em um dia específico, pula e continua
+                    pass 
                 
-                # Atualiza a barrinha de progresso
                 progresso.progress((i + 1) / total)
 
             st.success(f"✅ Relatório gerado com sucesso! Encontrados {total} diários.")
             
-            # 3. O BOTÃO DE DOWNLOAD MÁGICO
             nome_arquivo = f"Decretos_{str_inicio}_a_{str_fim}.txt"
             st.download_button(
                 label="📥 Baixar Arquivo .TXT",
