@@ -62,9 +62,6 @@ if st.button("🚀 Buscar e Gerar Relatório"):
         # ==========================================
         if len(lista_diarios) > 0:
             
-            # --- A MÁGICA DA ORDENAÇÃO AQUI ---
-            # Isso força a lista a ficar em ordem cronológica (do mais antigo pro mais novo)
-            # independentemente de como o Querido Diário nos entregou os dados.
             lista_diarios = sorted(lista_diarios, key=lambda x: x["date"])
             # ----------------------------------
             
