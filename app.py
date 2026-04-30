@@ -8,11 +8,11 @@ from datetime import datetime, date
 # ==========================================
 st.set_page_config(page_title="Extrator DOM Salvador", page_icon="📑")
 
-st.title("🔍 Extrator de Decretos Simples")
+st.title("🔍 Extrator de Decretos Simples - Desde 06/2012")
 st.write("Selecione o período abaixo para buscar os Decretos Simples no Diário Oficial de Salvador.")
 
 # Definindo os limites do calendário (de 2001 até hoje)
-data_minima = date(2001, 1, 1)
+data_minima = date(2012, 6, 1)
 data_maxima = date.today()
 
 col1, col2 = st.columns(2)
