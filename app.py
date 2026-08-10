@@ -55,7 +55,8 @@ if st.button("🚀 Buscar e Gerar Relatório"):
 
                 if "gazettes" in dados and len(dados["gazettes"]) > 0:
                     lista_diarios.extend(dados["gazettes"])
-                    offset += 50 
+                    offset += 50
+                    time.sleep(1)
                 else:
                     break 
                     
