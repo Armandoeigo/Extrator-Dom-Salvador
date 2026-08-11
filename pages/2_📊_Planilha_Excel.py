@@ -129,17 +129,20 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                         
                         # A ORDEM NOVA: GERAR DADOS PUROS (CSV)
                         prompt_decretos = f"""
-                        Você é um robô extrator de dados estruturados.
-                        Sua ÚNICA tarefa é extrair os quadros de cargos (Acrescidos e Suprimidos) da seção "DECRETOS NUMERADOS".
+                        Você é um especialista em extração de dados de Diários Oficiais.
+                        Leia o texto abaixo, que contém Decretos de Pessoal em parágrafos corridos.
+                        Sua missão é procurar nomeações, exonerações, demissões, transferências e outros atos de pessoal.
                         
-                        REGRAS RÍGIDAS DE FORMATAÇÃO:
-                        1. Ignore todo o texto explicativo, organogramas, cabeçalhos, introduções e assinaturas.
-                        2. Retorne os dados ESTRITAMENTE em formato CSV, usando ponto e vírgula (;) como separador.
-                        3. A estrutura de cada linha DEVE ser obrigatoriamente:
-                           Numero_do_Decreto;Nome_do_Cargo;Grau;Qtd_Acrescida;Qtd_Suprimida
-                        4. Se a coluna Acrescido ou Suprimido estiver em branco, coloque 0.
-                        5. NÃO use blocos de código Markdown (como ```csv). Retorne apenas o texto puro do CSV.
-                        6. Se não houver NENHUMA tabela de cargos neste texto, retorne EXATAMENTE a palavra "NADA".
+                        Extraia os dados desses textos e monte uma tabela estrita no formato CSV, separada por ponto e vírgula (;).
+                        
+                        O cabeçalho obrigatório deve ser exatamente este:
+                        Ato;Nome;Matricula;Cargo;Secretaria
+                        
+                        Exemplo de como você deve montar a linha com base no texto lido:
+                        Demissão;ANNE GABRIELA COSTA NASCIMENTO SANTOS;813672;Agente de Salvamento Aquático;Secretaria Municipal de Ordem Pública
+                        
+                        Retorne APENAS o CSV. Não escreva mais nada.
+                        Se não encontrar nenhum ato de pessoal no texto, responda EXATAMENTE a palavra: NADA
                         
                         Texto para análise:
                         {texto_secao}
@@ -157,13 +160,13 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                             
                             for linha in leitor_csv:
                                 # Pula possíveis cabeçalhos de coluna que a IA tenha gerado sozinha
-                                se_cabeçalho = any("Decreto" in str(item) or "Cargo" in str(item) for item in linha)
+                                se_cabeçalho = any("Ato" in str(item) or "Nome" in str(item) for item in linha)
                                 
                                 if len(linha) >= 2 and not se_cabeçalho:
                                     # Formata a data para padrão brasileiro
                                     data_formatada = datetime.strptime(data_pub, "%Y-%m-%d").strftime("%d/%m/%Y")
                                     
-                                    # Junta a Data e o DOM (gerados pelo sistema) com os 5 dados (gerados pela IA)
+                                    # Junta a Data e o DOM com os dados gerados pela IA
                                     linha_completa = [data_formatada, num_dom] + linha
                                     dados_para_excel.append(linha_completa)
                         
@@ -180,7 +183,8 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                 # 3. GERAÇÃO DA PLANILHA EXCEL (.XLSX)
                 # ==========================================
                 if dados_para_excel:
-                    colunas = ["Data da Publicação", "Nº do DOM", "Nº do Decreto", "Cargo / Função", "Grau", "Qtd Acrescida", "Qtd Suprimida"]
+                    # ATENÇÃO: As colunas novas para o Excel!
+                    colunas = ["Data da Publicação", "Nº do DOM", "Ato", "Nome", "Matrícula", "Cargo", "Secretaria"]
                     
                     # Padroniza as linhas para garantir que todas tenham 7 colunas (evita erros no Excel)
                     dados_padronizados = [linha[:7] + [""] * (7 - len(linha[:7])) for linha in dados_para_excel]
