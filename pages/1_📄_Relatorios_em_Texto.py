@@ -5,13 +5,20 @@ import time
 from datetime import datetime, date
 
 # ==========================================
-# 1. INTERFACE DO SITE
+# 1. INTERFACE DO SITE E CONFIGURAÇÃO
 # ==========================================
-st.set_page_config(page_title="Extrator DOM Salvador", page_icon="📑")
+st.set_page_config(page_title="Extrator DOM Salvador", page_icon="🏛️")
 
-st.title("🔍 Extrator de Decretos Simples")
-st.write("Selecione o período abaixo para buscar os Decretos Simples no Diário Oficial de Salvador.")
-st.write("**:red[Atenção: Base de dados disponível desde 06/2012]**")
+# --- CABEÇALHO DA BARRA LATERAL ---
+st.sidebar.markdown("### 🏛️ Painel do Extrator")
+st.sidebar.caption("Prefeitura Municipal de Salvador")
+st.sidebar.markdown("---")
+
+# --- INFORMAÇÕES DA FERRAMENTA ---
+st.sidebar.write("⚙️ **Modo: Texto Rápido**")
+st.sidebar.write("Esta ferramenta utiliza extração estruturada simples. Como ela não utiliza a Inteligência Artificial, **não é necessário inserir nenhuma API Key** nesta página.")
+st.sidebar.success("Pronto para uso imediato!")
+st.sidebar.markdown("---")
 
 # Definindo os limites do calendário (de 2001 até hoje)
 data_minima = date(2012, 6, 1)
