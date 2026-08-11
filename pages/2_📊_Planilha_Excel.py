@@ -17,7 +17,7 @@ st.set_page_config(page_title="Extrator DOM com IA", page_icon="📊")
 st.sidebar.write("⚙️ **Motor de Inteligência**")
 st.sidebar.write("O sistema utiliza a IA do Google Gemini para processamento.")
 
-chave_api = st.sidebar.text_input("🔑 Cole sua API Key aqui:", type="password")
+chave_api = st.sidebar.text_input("🔑 Cole sua API Key aqui:", type="password", autocomplete="off")
 
 # --- TUTORIAL PASSO A PASSO ---
 with st.sidebar.expander("❓ Como criar minha API Key grátis?"):
