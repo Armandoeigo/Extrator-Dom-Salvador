@@ -13,10 +13,24 @@ from datetime import datetime, date
 # ==========================================
 st.set_page_config(page_title="Extrator DOM com IA", page_icon="📊")
 
-st.sidebar.title("⚙️ Configurações da IA")
-st.sidebar.write("Gerador de Planilhas Perfeitas (Excel).")
+# --- CONFIGURAÇÕES DA API ---
+st.sidebar.write("⚙️ **Motor de Inteligência**")
+st.sidebar.write("O sistema utiliza a IA do Google Gemini para processamento.")
+
 chave_api = st.sidebar.text_input("🔑 Cole sua API Key aqui:", type="password")
-st.sidebar.markdown("[Clique aqui para criar/ver sua API Key grátis](https://aistudio.google.com/)")
+
+# --- TUTORIAL PASSO A PASSO ---
+with st.sidebar.expander("❓ Como criar minha API Key grátis?"):
+    st.markdown("""
+    **Passo a passo rápido:**
+    1. Acesse o site [Google AI Studio](https://aistudio.google.com/).
+    2. Faça login com a sua conta do Google (a mesma do Gmail).
+    3. No menu lateral esquerdo, clique na opção **"Get API key"**.
+    4. Clique no botão azul **"Create API key"**.
+    5. Copie a sequência de letras e números gerada e cole no campo acima!
+    """)
+    
+st.sidebar.markdown("---")
 
 st.title("📊 Extrator Matemático: Cargos e Decretos")
 
