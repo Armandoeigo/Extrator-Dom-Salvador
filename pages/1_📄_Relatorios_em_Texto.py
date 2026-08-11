@@ -38,6 +38,8 @@ with col2:
 # 2. AÇÃO DO BOTÃO
 # ==========================================
 if st.button("🚀 Buscar e Gerar Relatório"):
+
+    st.warning("🚨 **NÃO MUDE DE PÁGINA!** O robô começou a trabalhar. Se você clicar no menu lateral ou fechar esta aba, a extração será cancelada e o progresso será perdido.")
     
     str_inicio = data_inicio.strftime("%Y-%m-%d")
     str_fim = data_fim.strftime("%Y-%m-%d")
