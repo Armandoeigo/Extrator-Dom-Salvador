@@ -55,6 +55,8 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
     if not chave_api:
         st.error("⚠️ Por favor, cole a sua API Key no menu lateral esquerdo antes de clicar em buscar.")
     else:
+        st.warning("🚨 **NÃO MUDE DE PÁGINA!** O robô começou a trabalhar. Se você clicar no menu lateral ou fechar esta aba, a extração será cancelada e o progresso será perdido.")
+        
         genai.configure(api_key=chave_api)
         
         modelo_ia = genai.GenerativeModel('gemini-3.1-flash-lite')
