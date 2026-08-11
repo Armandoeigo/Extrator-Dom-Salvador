@@ -20,6 +20,10 @@ st.sidebar.write("Esta ferramenta utiliza extração estruturada simples. Como e
 st.sidebar.success("Pronto para uso imediato!")
 st.sidebar.markdown("---")
 
+st.title("🔍 Extrator de Decretos Simples")
+st.write("Selecione o período abaixo para buscar os Decretos Simples no Diário Oficial de Salvador.")
+st.markdown("<span style='color:red'>**Atenção: Base de dados disponível desde 06/2012**</span>", unsafe_allow_html=True)
+
 # Definindo os limites do calendário (de 2001 até hoje)
 data_minima = date(2012, 6, 1)
 data_maxima = date.today()
