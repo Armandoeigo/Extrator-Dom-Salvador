@@ -36,6 +36,8 @@ st.title("📊 Extrator Matemático: Cargos e Decretos")
 
 st.write("Selecione o período abaixo. A IA vai ignorar textos soltos e gerar uma **planilha de Excel** perfeita com as tabelas de cargos acrescidos e suprimidos.")
 
+st.markdown("<span style='color:red'>**Atenção: Base de dados disponível desde 06/2012**</span>", unsafe_allow_html=True)
+
 data_minima = date(2012, 6, 1)
 data_maxima = date.today()
 
