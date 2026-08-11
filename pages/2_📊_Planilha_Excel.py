@@ -167,7 +167,7 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                                     linha_completa = [data_formatada, num_dom] + linha
                                     dados_para_excel.append(linha_completa)
                         
-                        time.sleep(8)
+                        time.sleep(12)
                         
                     except Exception as e:
                         st.error(f"Erro no diário de {data_pub}: {e}")
