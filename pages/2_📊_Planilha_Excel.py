@@ -55,6 +55,8 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
     if not chave_api:
         st.error("⚠️ Por favor, cole a sua API Key no menu lateral esquerdo antes de clicar em buscar.")
     else:
+        tempo_inicio = time.time()
+        
         st.warning("🚨 **NÃO MUDE DE PÁGINA!** O robô começou a trabalhar. Se você clicar no menu lateral ou fechar esta aba, a extração será cancelada e o progresso será perdido.")
         
         genai.configure(api_key=chave_api)
@@ -178,6 +180,18 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                         st.error(f"Erro no diário de {data_pub}: {e}")
                     
                     progresso.progress((i + 1) / total)
+                    
+                tempo_fim = time.time()
+                duracao_total = int(tempo_fim - tempo_inicio)
+                
+                minutos = duracao_total // 60
+                segundos = duracao_total % 60
+                
+                # Exibe o tempo formatado na tela
+                if minutos > 0:
+                    st.metric(label="⏱️ Tempo Total da Consulta", value=f"{minutos} min e {segundos} seg")
+                else:
+                    st.metric(label="⏱️ Tempo Total da Consulta", value=f"{segundos} seg")
 
                 st.success(f"✅ Análise concluída! Diários processados: {total}")
                 
