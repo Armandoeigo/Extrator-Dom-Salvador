@@ -32,9 +32,9 @@ with st.sidebar.expander("❓ Como criar minha API Key grátis?"):
     
 st.sidebar.markdown("---")
 
-st.title("📊 Extrator Matemático: Cargos e Decretos")
+st.title("📊 Extrator: Cargos e Decretos")
 
-st.write("Selecione o período abaixo. A IA vai ignorar textos soltos e gerar uma **planilha de Excel** perfeita com as tabelas de cargos acrescidos e suprimidos.")
+st.write("Selecione o período abaixo. A IA vai ignorar textos soltos e gerar uma **planilha de Excel** perfeita com as tabelas de cargos e seus atos.")
 
 st.markdown("<span style='color:red'>**Atenção: Base de dados disponível desde 06/2012**</span>", unsafe_allow_html=True)
 
