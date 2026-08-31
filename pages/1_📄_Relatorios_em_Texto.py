@@ -51,7 +51,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
         }
-        url_api = "https://api.queridodiario.ok.org.br/api/gazettes/"
+        url_api = "https://queridodiario.ok.org.br/api/gazettes/"
         
         # Paginação: Garante que pegamos todos os diários do período
         lista_diarios = []
