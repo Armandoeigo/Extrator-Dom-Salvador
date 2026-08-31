@@ -1,14 +1,20 @@
 import streamlit as st
 import requests
-import google.generativeai as genai
+from google import genai
+from google.genai import errors as erros_ia
 import re
 import time
+import random
 import pandas as pd
 import io
 import csv
 from datetime import datetime, date
 
 import dom_salvador as dom
+
+# Modelo do Gemini usado na extração. Alternativa mais recente da mesma
+# familia: "gemini-3.5-flash-lite".
+MODELO_IA = "gemini-3.1-flash-lite"
 
 # ==========================================
 # 1. INTERFACE DO SITE E CONFIGURAÇÃO DA IA
@@ -74,12 +80,17 @@ with col1:
 with col2:
     data_fim = st.date_input("Data Final", min_value=data_minima, max_value=data_maxima, format="DD/MM/YYYY")
 
-# A IA é o gargalo desta página: avisa antes de o usuário esperar à toa
+# A IA é o gargalo desta página: avisa antes de o usuário esperar à toa.
+# Medido em agosto/2026: cada diário rende, em média, ~5 pedaços de texto,
+# e cada pedaço é uma chamada à IA.
 dias = (data_fim - data_inicio).days
-if dias > 60:
-    estimativa = int(dias * 0.7 * (pausa_ia + 3) / 60)
-    st.warning(f"⏳ Período de {dias} dias. Com a pausa de {pausa_ia}s entre diários, "
-               f"isso deve levar cerca de **{estimativa} min**. O tempo aqui é da IA, não da busca.")
+if dias > 14:
+    diarios = max(1, int(dias * 0.7))
+    chamadas_previstas = diarios * 5
+    estimativa = int(chamadas_previstas * (pausa_ia + 3) / 60)
+    st.warning(f"⏳ Período de {dias} dias ≈ {diarios} diários e ~{chamadas_previstas} chamadas "
+               f"à IA. Com a pausa de {pausa_ia}s, isso deve levar cerca de **{estimativa} min**. "
+               f"O texto é fatiado para a IA não perder atos — o que custa tempo e cota.")
 
 # ==========================================
 # RECORTE DO TRECHO QUE VAI PARA A IA
@@ -103,6 +114,40 @@ def cortar_trecho(texto_completo):
 
 
 # ==========================================
+# FATIAMENTO PARA A IA
+# ==========================================
+# Um diário pode render centenas de milhares de caracteres. Mandados de uma
+# vez só, o modelo satura e devolve uma amostra dos atos em vez de todos.
+# Fatiar custa mais chamadas, mas não perde registro.
+TAMANHO_PEDACO = 30000
+SOBREPOSICAO = 2000      # evita cortar um ato exatamente na emenda
+
+
+def fatiar(texto, tamanho=TAMANHO_PEDACO, sobreposicao=SOBREPOSICAO):
+    """Quebra o texto em pedaços, preferindo cortar em quebra de linha."""
+    if len(texto) <= tamanho:
+        return [texto]
+    pedacos, ini = [], 0
+    while ini < len(texto):
+        fim = min(ini + tamanho, len(texto))
+        if fim < len(texto):
+            quebra = texto.rfind("\n", ini + tamanho // 2, fim)
+            if quebra > 0:
+                fim = quebra
+        pedacos.append(texto[ini:fim])
+        if fim >= len(texto):
+            break
+        ini = max(fim - sobreposicao, ini + 1)
+    return pedacos
+
+
+def chave_linha(linha):
+    """Identidade de um ato, para não repetir o que cai na sobreposição."""
+    campos = [str(c).strip().upper() for c in linha[:3]]
+    return tuple(re.sub(r"\s+", " ", c) for c in campos)
+
+
+# ==========================================
 # 2. AÇÃO DO BOTÃO
 # ==========================================
 if st.button("🚀 Buscar e Gerar Planilha Excel"):
@@ -114,9 +159,35 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
 
         st.warning("🚨 **NÃO MUDE DE PÁGINA!** O robô começou a trabalhar. Se você clicar no menu lateral ou fechar esta aba, a extração será cancelada e o progresso será perdido.")
 
-        genai.configure(api_key=chave_api)
+        # SDK novo (google-genai): um Client no lugar da configuração global
+        cliente_ia = genai.Client(api_key=chave_api)
 
-        modelo_ia = genai.GenerativeModel('gemini-3.1-flash-lite')
+        repeticoes = {"n": 0}
+
+        def perguntar_ia(texto, tentativas=4):
+            """
+            Uma pergunta ao Gemini, devolvendo só o texto da resposta.
+
+            Erros temporários são refeitos com espera crescente: o 503
+            ("modelo sobrecarregado") e o 429 (cota por minuto estourada)
+            são frequentes e passageiros. Sem isso, um soluço momentâneo do
+            servidor custa o diário inteiro.
+            """
+            espera = 8
+            for n in range(tentativas):
+                try:
+                    resposta = cliente_ia.models.generate_content(
+                        model=MODELO_IA, contents=texto)
+                    return (resposta.text or "").strip()
+                except erros_ia.APIError as e:
+                    passageiro = (isinstance(e, erros_ia.ServerError)
+                                  or getattr(e, "code", None) == 429)
+                    if not passageiro or n == tentativas - 1:
+                        raise
+                    repeticoes["n"] += 1
+                    # jitter: evita que várias tentativas caiam no mesmo instante
+                    time.sleep(espera + random.uniform(0, 3))
+                    espera *= 2   # 8s, 16s, 32s
 
         str_inicio = data_inicio.strftime("%Y-%m-%d")
         str_fim = data_fim.strftime("%Y-%m-%d")
@@ -200,7 +271,11 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
         if a_processar:
             dados_para_excel = []
             sem_trecho = 0
+            perdidos = []   # diários que a IA não conseguiu processar
+            parciais = []   # diários que vieram incompletos: (data, falhos, total)
+            chamadas = {"n": 0}
             progresso = st.progress(0)
+            situacao = st.empty()
             total = len(a_processar)
 
             st.info("🧠 A IA está garimpando os dados numéricos e montando as colunas...")
@@ -230,52 +305,105 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                         Retorne APENAS o número (ex: 8.542). Se não encontrar, retorne S/N.
                         Texto: {texto_completo[:2000]}
                         """
-                        num_dom = modelo_ia.generate_content(prompt_capa).text.strip()
+                        num_dom = perguntar_ia(prompt_capa)
 
-                    # A ORDEM NOVA: GERAR DADOS PUROS (CSV)
-                    prompt_decretos = f"""
-                    Você é um especialista em extração de dados de Diários Oficiais.
-                    Leia o texto abaixo, que contém Decretos de Pessoal em parágrafos corridos.
-                    Sua missão é procurar nomeações, exonerações, demissões, transferências e outros atos de pessoal.
+                    # Fatia o texto: mandado inteiro, o modelo satura e devolve
+                    # só uma amostra dos atos.
+                    pedacos = fatiar(texto_secao)
+                    vistos = set()          # dedup do que cai na sobreposição
+                    falhos_no_diario = 0
+                    ultimo_erro = None
 
-                    Extraia os dados desses textos e monte uma tabela estrita no formato CSV, separada por ponto e vírgula (;).
+                    for n_ped, pedaco in enumerate(pedacos, 1):
+                        situacao.write(f"Diário {i+1}/{total} "
+                                       f"({item['data'].strftime('%d/%m/%Y')}) — "
+                                       f"pedaço {n_ped}/{len(pedacos)}")
 
-                    O cabeçalho obrigatório deve ser exatamente este:
-                    Ato;Nome;Matricula;Cargo;Secretaria
+                        # A ORDEM NOVA: GERAR DADOS PUROS (CSV)
+                        prompt_decretos = f"""
+                        Você é um especialista em extração de dados de Diários Oficiais.
+                        Leia o texto abaixo, que contém Decretos de Pessoal em parágrafos corridos.
+                        Sua missão é procurar nomeações, exonerações, demissões, transferências e outros atos de pessoal.
 
-                    Exemplo de como você deve montar a linha com base no texto lido:
-                    Demissão;ANNE GABRIELA COSTA NASCIMENTO SANTOS;813672;Agente de Salvamento Aquático;Secretaria Municipal de Ordem Pública
+                        O texto pode conter atos escritos de formas variadas ("Nomear", "Exonerar",
+                        "Considerar exonerado", "Declarar a Vacância", "Designar", "Dispensar") e
+                        também TABELAS com colunas como SERVIDOR, MATRÍCULA, CÓDIGO/ESCOLA.
+                        Extraia os atos nos dois formatos. Nas tabelas, cada linha é um ato.
 
-                    Retorne APENAS o CSV. Não escreva mais nada.
-                    Se não encontrar nenhum ato de pessoal no texto, responda EXATAMENTE a palavra: NADA
+                        Extraia os dados desses textos e monte uma tabela estrita no formato CSV, separada por ponto e vírgula (;).
 
-                    Texto para análise:
-                    {texto_secao}
-                    """
+                        O cabeçalho obrigatório deve ser exatamente este:
+                        Ato;Nome;Matricula;Cargo;Secretaria
 
-                    resposta_decretos = modelo_ia.generate_content(prompt_decretos)
-                    conteudo_csv = resposta_decretos.text.strip()
+                        Exemplo de como você deve montar a linha com base no texto lido:
+                        Demissão;ANNE GABRIELA COSTA NASCIMENTO SANTOS;813672;Agente de Salvamento Aquático;Secretaria Municipal de Ordem Pública
 
-                    # Limpando blocos de código indesejados da IA
-                    conteudo_csv = re.sub(r'```(?:csv|text)?', '', conteudo_csv).strip()
+                        Retorne APENAS o CSV. Não escreva mais nada.
+                        Se não encontrar nenhum ato de pessoal no texto, responda EXATAMENTE a palavra: NADA
 
-                    if conteudo_csv != "NADA" and conteudo_csv != "":
-                        # Transforma a resposta da IA em linhas de código
-                        leitor_csv = csv.reader(io.StringIO(conteudo_csv), delimiter=';')
+                        Texto para análise:
+                        {pedaco}
+                        """
 
-                        for linha in leitor_csv:
-                            # Pula possíveis cabeçalhos de coluna que a IA tenha gerado sozinha
-                            se_cabeçalho = any("Ato" in str(campo) or "Nome" in str(campo) for campo in linha)
+                        # A falha é tratada AQUI, por pedaço. Se um pedaço não
+                        # vier, os outros do mesmo diário continuam valendo —
+                        # perder 1 de 17 é muito melhor que perder o dia todo.
+                        try:
+                            conteudo_csv = perguntar_ia(prompt_decretos)
+                            chamadas["n"] += 1
+                        except erros_ia.APIError as e:
+                            falhos_no_diario += 1
+                            ultimo_erro = e
+                            continue
 
-                            if len(linha) >= 2 and not se_cabeçalho:
-                                data_formatada = item["data"].strftime("%d/%m/%Y")
-                                linha_completa = [data_formatada, num_dom] + linha
-                                dados_para_excel.append(linha_completa)
+                        # Limpando blocos de código indesejados da IA
+                        conteudo_csv = re.sub(r'```(?:csv|text)?', '', conteudo_csv).strip()
 
-                    if pausa_ia:
-                        time.sleep(pausa_ia)
+                        if conteudo_csv != "NADA" and conteudo_csv != "":
+                            # Transforma a resposta da IA em linhas de código
+                            leitor_csv = csv.reader(io.StringIO(conteudo_csv), delimiter=';')
+
+                            for linha in leitor_csv:
+                                # Pula possíveis cabeçalhos de coluna que a IA tenha gerado sozinha
+                                se_cabeçalho = any("Ato" in str(campo) or "Nome" in str(campo) for campo in linha)
+
+                                if len(linha) >= 2 and not se_cabeçalho:
+                                    chave = chave_linha(linha)
+                                    if chave in vistos:
+                                        continue
+                                    vistos.add(chave)
+                                    data_formatada = item["data"].strftime("%d/%m/%Y")
+                                    linha_completa = [data_formatada, num_dom] + linha
+                                    dados_para_excel.append(linha_completa)
+
+                        if pausa_ia:
+                            time.sleep(pausa_ia)
+
+                    # Balanço do diário: nada, tudo ou parte?
+                    if falhos_no_diario:
+                        codigo = getattr(ultimo_erro, "code", "?")
+                        if falhos_no_diario >= len(pedacos):
+                            perdidos.append(item["data"])
+                        else:
+                            parciais.append((item["data"], falhos_no_diario, len(pedacos)))
+                        if codigo == 429:
+                            st.warning(f"{item['data'].strftime('%d/%m/%Y')}: {falhos_no_diario} de "
+                                       f"{len(pedacos)} pedaços travaram na cota do Gemini. "
+                                       f"Aumente a pausa na barra lateral.")
+                        else:
+                            st.warning(f"{item['data'].strftime('%d/%m/%Y')}: {falhos_no_diario} de "
+                                       f"{len(pedacos)} pedaços falharam (erro {codigo}). "
+                                       f"É passageiro — rode o período de novo para completar.")
+
+                # Erros de pedaço já foram tratados acima. Aqui só cai o que
+                # impede o diário inteiro: download do PDF, leitura, edição.
+                except erros_ia.APIError as e:
+                    perdidos.append(item["data"])
+                    st.error(f"Diário de {item['data'].strftime('%d/%m/%Y')}: erro "
+                             f"{getattr(e, 'code', '?')} da IA ao identificar a edição — {e}")
 
                 except Exception as e:
+                    perdidos.append(item["data"])
                     st.error(f"Erro no diário de {item['data'].strftime('%d/%m/%Y')}: {e}")
 
                 progresso.progress((i + 1) / total)
@@ -290,9 +418,25 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
             else:
                 st.metric(label="⏱️ Tempo Total da Consulta", value=f"{segundos} seg")
 
-            st.success(f"✅ Análise concluída! Diários processados: {total}")
+            situacao.empty()
+            st.success(f"✅ Análise concluída! Diários processados: {total} "
+                       f"({chamadas['n']} chamadas à IA)")
             if sem_trecho:
                 st.info(f"ℹ️ {sem_trecho} diário(s) não traziam a seção de Decretos Numerados e foram pulados.")
+            if repeticoes["n"]:
+                st.info(f"🔁 {repeticoes['n']} chamada(s) à IA falharam por sobrecarga/cota e "
+                        f"foram refeitas automaticamente.")
+            if parciais:
+                det = ", ".join(f"{d.strftime('%d/%m/%Y')} ({f} de {t} pedaços)"
+                                for d, f, t in parciais)
+                st.warning(f"⚠️ **{len(parciais)} diário(s) vieram incompletos:** {det}. "
+                           f"O que foi extraído está na planilha; rode o período de novo "
+                           f"para completar o que faltou.")
+            if perdidos:
+                dias = ", ".join(d.strftime("%d/%m/%Y") for d in perdidos)
+                st.warning(f"⚠️ **{len(perdidos)} diário(s) ficaram de fora da planilha:** {dias}. "
+                           f"Rode este período novamente para completá-los — a busca já está em "
+                           f"cache, então será rápido.")
 
             # ==========================================
             # 4. GERAÇÃO DA PLANILHA EXCEL (.XLSX)

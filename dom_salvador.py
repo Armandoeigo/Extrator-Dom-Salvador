@@ -32,7 +32,11 @@ Requer: requests, pymupdf
 """
 
 import re
+import os
+import json
 import time
+import hashlib
+import tempfile
 import requests
 from datetime import date
 from concurrent.futures import ThreadPoolExecutor
@@ -40,6 +44,12 @@ from concurrent.futures import ThreadPoolExecutor
 BASE = "http://www.dom.salvador.ba.gov.br"
 POR_PAGINA = 20
 WORKERS = 8          # conexoes simultaneas; mantenha modesto por educacao
+
+# Cache em disco. Uma edicao publicada nunca muda, entao o que guardamos aqui
+# nao expira. Guardamos o TEXTO ja extraido (poucos KB), nunca os PDFs.
+CACHE_DIR = os.environ.get(
+    "DOM_CACHE_DIR", os.path.join(tempfile.gettempdir(), "dom_salvador_cache"))
+USAR_CACHE = True
 CABECALHO = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -58,6 +68,67 @@ _RE_CABECALHO_PAG = re.compile(
 _PARADA = (r"\n\s*(?:SECRETARIA|GABINETE|PROCURADORIA|CONTROLADORIA|"
            r"SUPERINTEND[ÊE]NCIA|FUNDA[ÇC][ÃA]O|LICITA[ÇC][ÕO]ES|CONSELHO|"
            r"CASA\s+CIVIL|EMPRESA|INSTITUTO|AG[ÊE]NCIA|COMPANHIA)\b")
+
+
+# ==========================================
+# Cache em disco
+# ==========================================
+
+def _caminho_cache(chave):
+    nome = hashlib.sha1(chave.encode("utf-8")).hexdigest() + ".json"
+    return os.path.join(CACHE_DIR, nome)
+
+
+def _ler_cache(chave):
+    if not USAR_CACHE:
+        return None
+    try:
+        with open(_caminho_cache(chave), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None   # cache ausente ou corrompido: segue pela rede
+
+
+def _gravar_cache(chave, valor):
+    if not USAR_CACHE:
+        return
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        caminho = _caminho_cache(chave)
+        # grava em arquivo temporario e renomeia, para nunca deixar
+        # um json pela metade se o processo morrer no meio
+        tmp = caminho + f".{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(valor, f, ensure_ascii=False)
+        os.replace(tmp, caminho)
+    except Exception:
+        pass          # cache e conveniencia; nunca deve quebrar a busca
+
+
+def limpar_cache():
+    """Apaga tudo que estiver em cache. Devolve quantos arquivos removeu."""
+    n = 0
+    try:
+        for nome in os.listdir(CACHE_DIR):
+            if nome.endswith(".json"):
+                os.remove(os.path.join(CACHE_DIR, nome))
+                n += 1
+    except Exception:
+        pass
+    return n
+
+
+def tamanho_cache():
+    """Devolve (arquivos, bytes) ocupados pelo cache."""
+    arq = tam = 0
+    try:
+        for nome in os.listdir(CACHE_DIR):
+            if nome.endswith(".json"):
+                arq += 1
+                tam += os.path.getsize(os.path.join(CACHE_DIR, nome))
+    except Exception:
+        pass
+    return arq, tam
 
 
 # ==========================================
@@ -91,6 +162,13 @@ def listar_pagina(limitstart=0):
 
 def obter_meta(edicao, artigo_id):
     """Devolve {'edicao', 'data', 'pdf_url'} de uma edicao, ou None."""
+    chave = f"meta:{edicao}:{artigo_id}"
+    guardado = _ler_cache(chave)
+    if guardado:
+        a, m, d = (int(x) for x in guardado["data"].split("-"))
+        return {"edicao": guardado["edicao"], "data": date(a, m, d),
+                "pdf_url": guardado["pdf_url"]}
+
     html = _get(f"{BASE}/index.php?option=com_content&view=article"
                 f"&id={artigo_id}:dom-{edicao}&catid=1:dom")
     achado = _RE_PDF.search(html)
@@ -103,7 +181,10 @@ def obter_meta(edicao, artigo_id):
     if not d:
         return None
     dia, mes, ano = (int(x) for x in d.groups())
-    return {"edicao": edicao, "data": date(ano, mes, dia), "pdf_url": pdf_url}
+    meta = {"edicao": edicao, "data": date(ano, mes, dia), "pdf_url": pdf_url}
+    _gravar_cache(chave, {"edicao": edicao, "pdf_url": pdf_url,
+                          "data": f"{ano:04d}-{mes:02d}-{dia:02d}"})
+    return meta
 
 
 def _meta_segura(par):
@@ -280,13 +361,24 @@ def baixar_texto(pdf_url):
 
 def _bloco(m, secao):
     import fitz
+    # O cache guarda inclusive o resultado negativo ("esta edicao nao tem a
+    # secao"), que tambem custou um PDF inteiro para ser descoberto.
+    chave = f"bloco:{m['edicao']}:{secao}"
+    guardado = _ler_cache(chave)
+    if guardado is not None:
+        if not guardado.get("texto"):
+            return None
+        return {**m, "texto": guardado["texto"], "metodo": guardado["metodo"]}
+
     try:
         r = requests.get(m["pdf_url"], headers=CABECALHO, timeout=120)
         r.raise_for_status()
         with fitz.open(stream=r.content, filetype="pdf") as doc:
             texto, metodo = extrair_secao(doc, secao)
+        _gravar_cache(chave, {"texto": texto, "metodo": metodo})
         return {**m, "texto": texto, "metodo": metodo} if texto else None
     except Exception as e:
+        # Falha de rede nao vai para o cache: da proxima vez tentamos de novo
         return {**m, "texto": None, "metodo": None, "erro": str(e)}
 
 

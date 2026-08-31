@@ -1,6 +1,6 @@
 streamlit
 requests
-google-generativeai
+google-genai
 pandas
 openpyxl
 pymupdf
