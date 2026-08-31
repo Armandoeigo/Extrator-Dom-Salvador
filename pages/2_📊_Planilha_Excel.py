@@ -81,16 +81,21 @@ with col2:
     data_fim = st.date_input("Data Final", min_value=data_minima, max_value=data_maxima, format="DD/MM/YYYY")
 
 # A IA é o gargalo desta página: avisa antes de o usuário esperar à toa.
-# Medido em agosto/2026: cada diário rende, em média, ~5 pedaços de texto,
-# e cada pedaço é uma chamada à IA.
+# Medido em 2024/2025/2026: cada diário rende, em média, ~6 pedaços de texto,
+# e cada pedaço é uma chamada à IA. A conta gratuita do Gemini permite 500
+# chamadas por dia, o que dá cerca de 80 diários (~4 meses de DOM) por dia.
 dias = (data_fim - data_inicio).days
 if dias > 14:
     diarios = max(1, int(dias * 0.7))
-    chamadas_previstas = diarios * 5
+    chamadas_previstas = diarios * 6
     estimativa = int(chamadas_previstas * (pausa_ia + 3) / 60)
     st.warning(f"⏳ Período de {dias} dias ≈ {diarios} diários e ~{chamadas_previstas} chamadas "
                f"à IA. Com a pausa de {pausa_ia}s, isso deve levar cerca de **{estimativa} min**. "
                f"O texto é fatiado para a IA não perder atos — o que custa tempo e cota.")
+    if chamadas_previstas > 500:
+        st.error(f"🚫 Isso passa das **500 chamadas por dia** da conta gratuita do Gemini. "
+                 f"Divida a busca em períodos menores (cerca de 4 meses por dia) ou "
+                 f"as últimas chamadas vão falhar por cota.")
 
 # ==========================================
 # RECORTE DO TRECHO QUE VAI PARA A IA
@@ -103,14 +108,60 @@ if dias > 14:
 PARADA_PESSOAL = r"\n\s*(?:DECRETOS FINANCEIROS|CONTRATOS|LICITAÇÕES|EDITAIS|ATOS|AVISOS)\b"
 
 
+# Listagens em massa de servidores (saldos, licenças) vêm com o CPF mascarado
+# e ocupam centenas de milhares de caracteres sem conter um único ato. Medido
+# em ago/2026: um diário caiu de 462 mil para 85 mil caracteres.
+CPF_MASCARADO = re.compile(r"\d{3}\.\d{2}\*\.\*\*\*-\*\*")
+
+
+def tirar_listagens(texto, janela=3000, minimo=8, densidade=2):
+    """
+    Remove blocos densos em CPF mascarado. Conservador de propósito: só corta
+    onde há pelo menos `densidade` CPFs por mil caracteres. Verificado em
+    2024, 2025 e 2026 — nenhuma faixa removida continha ato de pessoal.
+    """
+    posicoes = [m.start() for m in CPF_MASCARADO.finditer(texto)]
+    if len(posicoes) < minimo:
+        return texto
+
+    faixas = []
+    for p in posicoes:
+        a, b = p - janela // 2, p + janela // 2
+        if faixas and a <= faixas[-1][1]:
+            faixas[-1] = (faixas[-1][0], max(faixas[-1][1], b))
+        else:
+            faixas.append((a, b))
+
+    partes, fim_anterior = [], 0
+    for a, b in faixas:
+        a, b = max(0, a), min(len(texto), b)
+        dens = len(CPF_MASCARADO.findall(texto[a:b])) / max((b - a) / 1000, 1)
+        if dens >= densidade:
+            partes.append(texto[fim_anterior:a])
+            fim_anterior = b
+    partes.append(texto[fim_anterior:])
+    return "".join(partes)
+
+
 def cortar_trecho(texto_completo):
-    """Do último 'DECRETOS NUMERADOS' até uma das seções finais do diário."""
+    """
+    Devolve o trecho que vai para a IA.
+
+    Se o diário traz 'DECRETOS NUMERADOS', começa dali. Se NÃO traz, usa o
+    diário inteiro em vez de pular: os atos de pessoal ficam espalhados por
+    DECRETOS SIMPLES e pelas seções das Secretarias, então um diário sem
+    decretos numerados ainda costuma ter dezenas de atos. Medido em 3
+    períodos: metade dos diários não tem a seção, e todos eles tinham atos.
+    """
     ocorrencias = list(re.finditer(r"DECRETOS\s+NUMERADOS", texto_completo, re.IGNORECASE))
-    if not ocorrencias:
-        return None
-    texto_restante = texto_completo[ocorrencias[-1].start():]
-    match_fim = re.search(PARADA_PESSOAL, texto_restante, re.IGNORECASE)
-    return texto_restante[:match_fim.start()] if match_fim else texto_restante
+    if ocorrencias:
+        texto_restante = texto_completo[ocorrencias[-1].start():]
+        match_fim = re.search(PARADA_PESSOAL, texto_restante, re.IGNORECASE)
+        trecho = texto_restante[:match_fim.start()] if match_fim else texto_restante
+    else:
+        trecho = texto_completo
+
+    return tirar_listagens(trecho) or None
 
 
 # ==========================================
