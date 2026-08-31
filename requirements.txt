@@ -3,3 +3,4 @@ requests
 google-generativeai
 pandas
 openpyxl
+pymupdf
