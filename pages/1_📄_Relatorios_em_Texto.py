@@ -46,6 +46,9 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     
     with st.spinner(f"Buscando diários de {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}..."):
         
+        cabecalho = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
         url_api = "https://data.queridodiario.ok.org.br/api/gazettes/"
         
         # Paginação: Garante que pegamos todos os diários do período
@@ -63,7 +66,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
             }
 
             try:
-                resposta_api = requests.get(url_api, params=parametros)
+                resposta_api = requests.get(url_api, params=parametros, headers=cabecalho)
                 resposta_api.raise_for_status() 
                 dados = resposta_api.json()
 
@@ -99,7 +102,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                 url_txt = diario["txt_url"]
                 
                 try:
-                    texto_completo = requests.get(url_txt).text
+                    texto_completo = requests.get(url_txt, headers=cabecalho).text
                     
                     # 1. Identifica o número da Edição do DOM
                     padrao_numero = r"N\s*[º°oO]\s*(\d{1,3}(?:\.\d{3})?|\d+)"
