@@ -5,6 +5,7 @@ from google.genai import errors as erros_ia
 import re
 import time
 import random
+import hashlib
 import pandas as pd
 import io
 import csv
@@ -192,6 +193,23 @@ def fatiar(texto, tamanho=TAMANHO_PEDACO, sobreposicao=SOBREPOSICAO):
     return pedacos
 
 
+# Muda quando o prompt muda, para invalidar respostas guardadas de versões
+# antigas. Suba este número sempre que editar o prompt_decretos.
+VERSAO_PROMPT = 2
+
+
+def chave_pedaco(pedaco):
+    """
+    Identidade de um pedaço de texto para o cache de respostas da IA.
+
+    Guardar a resposta permite retomar de onde parou: se a cota diária de
+    500 chamadas acabar no meio de um período longo, basta rodar de novo no
+    dia seguinte -- os pedaços já processados saem do cache, sem gastar cota.
+    """
+    assinatura = f"{MODELO_IA}|{VERSAO_PROMPT}|{hashlib.sha1(pedaco.encode('utf-8')).hexdigest()}"
+    return f"ia:{assinatura}"
+
+
 def chave_linha(linha):
     """Identidade de um ato, para não repetir o que cai na sobreposição."""
     campos = [str(c).strip().upper() for c in linha[:3]]
@@ -325,6 +343,7 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
             perdidos = []   # diários que a IA não conseguiu processar
             parciais = []   # diários que vieram incompletos: (data, falhos, total)
             chamadas = {"n": 0}
+            reaproveitados = {"n": 0}
             progresso = st.progress(0)
             situacao = st.empty()
             total = len(a_processar)
@@ -396,16 +415,26 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                         {pedaco}
                         """
 
-                        # A falha é tratada AQUI, por pedaço. Se um pedaço não
-                        # vier, os outros do mesmo diário continuam valendo —
-                        # perder 1 de 17 é muito melhor que perder o dia todo.
-                        try:
-                            conteudo_csv = perguntar_ia(prompt_decretos)
-                            chamadas["n"] += 1
-                        except erros_ia.APIError as e:
-                            falhos_no_diario += 1
-                            ultimo_erro = e
-                            continue
+                        # Resposta já obtida numa execução anterior? Reaproveita
+                        # sem gastar cota. É o que permite retomar um período
+                        # longo no dia seguinte.
+                        ck = chave_pedaco(pedaco)
+                        guardado = dom.cache_ler(ck)
+                        if guardado is not None:
+                            conteudo_csv = guardado.get("csv", "")
+                            reaproveitados["n"] += 1
+                        else:
+                            # A falha é tratada AQUI, por pedaço. Se um pedaço não
+                            # vier, os outros do mesmo diário continuam valendo —
+                            # perder 1 de 17 é muito melhor que perder o dia todo.
+                            try:
+                                conteudo_csv = perguntar_ia(prompt_decretos)
+                                chamadas["n"] += 1
+                                dom.cache_gravar(ck, {"csv": conteudo_csv})
+                            except erros_ia.APIError as e:
+                                falhos_no_diario += 1
+                                ultimo_erro = e
+                                continue
 
                         # Limpando blocos de código indesejados da IA
                         conteudo_csv = re.sub(r'```(?:csv|text)?', '', conteudo_csv).strip()
@@ -427,7 +456,10 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                                     linha_completa = [data_formatada, num_dom] + linha
                                     dados_para_excel.append(linha_completa)
 
-                        if pausa_ia:
+                        # A pausa existe para respeitar a cota. Se a resposta
+                        # veio do cache, nenhuma chamada foi feita — esperar
+                        # aqui só tornaria a retomada lenta à toa.
+                        if pausa_ia and guardado is None:
                             time.sleep(pausa_ia)
 
                     # Balanço do diário: nada, tudo ou parte?
@@ -474,6 +506,9 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                        f"({chamadas['n']} chamadas à IA)")
             if sem_trecho:
                 st.info(f"ℹ️ {sem_trecho} diário(s) não traziam a seção de Decretos Numerados e foram pulados.")
+            if reaproveitados["n"]:
+                st.info(f"♻️ {reaproveitados['n']} pedaço(s) vieram do cache de execuções "
+                        f"anteriores, sem gastar cota da IA.")
             if repeticoes["n"]:
                 st.info(f"🔁 {repeticoes['n']} chamada(s) à IA falharam por sobrecarga/cota e "
                         f"foram refeitas automaticamente.")

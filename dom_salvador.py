@@ -71,8 +71,20 @@ _PARADA = (r"\n\s*(?:SECRETARIA|GABINETE|PROCURADORIA|CONTROLADORIA|"
 
 
 # ==========================================
-# Cache em disco
+# Cache em duas camadas
 # ==========================================
+# L1, memoria: vive enquanto o processo viver. E a unica camada que funciona
+#     no Streamlit Cloud, onde o disco do container e descartado a cada
+#     redeploy ou hibernacao. Serve buscas repetidas de todos os usuarios
+#     enquanto o app estiver de pe.
+# L2, disco: sobrevive ao processo onde o disco persiste (uso local, VM
+#     propria). No Streamlit Cloud some junto com o container.
+#
+# Uma edicao publicada nunca muda, entao nada aqui expira.
+
+_MEMORIA = {}
+LIMITE_MEMORIA = 5000     # entradas; ~5 anos de metadados cabem folgados
+
 
 def _caminho_cache(chave):
     nome = hashlib.sha1(chave.encode("utf-8")).hexdigest() + ".json"
@@ -82,9 +94,13 @@ def _caminho_cache(chave):
 def _ler_cache(chave):
     if not USAR_CACHE:
         return None
+    if chave in _MEMORIA:
+        return _MEMORIA[chave]
     try:
         with open(_caminho_cache(chave), encoding="utf-8") as f:
-            return json.load(f)
+            valor = json.load(f)
+        _MEMORIA[chave] = valor       # promove para a memoria
+        return valor
     except Exception:
         return None   # cache ausente ou corrompido: segue pela rede
 
@@ -92,6 +108,9 @@ def _ler_cache(chave):
 def _gravar_cache(chave, valor):
     if not USAR_CACHE:
         return
+    if len(_MEMORIA) >= LIMITE_MEMORIA:
+        _MEMORIA.clear()              # simples e suficiente: nada aqui e caro
+    _MEMORIA[chave] = valor
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
         caminho = _caminho_cache(chave)
@@ -102,11 +121,24 @@ def _gravar_cache(chave, valor):
             json.dump(valor, f, ensure_ascii=False)
         os.replace(tmp, caminho)
     except Exception:
-        pass          # cache e conveniencia; nunca deve quebrar a busca
+        pass          # disco indisponivel (Cloud, permissao): a memoria basta
+
+
+# --- API publica de cache, para as paginas guardarem os proprios resultados ---
+
+def cache_ler(chave):
+    """Le um valor do cache, ou None."""
+    return _ler_cache(chave)
+
+
+def cache_gravar(chave, valor):
+    """Guarda um valor no cache (memoria + disco, quando houver)."""
+    _gravar_cache(chave, valor)
 
 
 def limpar_cache():
-    """Apaga tudo que estiver em cache. Devolve quantos arquivos removeu."""
+    """Apaga o cache das duas camadas. Devolve quantos arquivos removeu."""
+    _MEMORIA.clear()
     n = 0
     try:
         for nome in os.listdir(CACHE_DIR):
@@ -119,7 +151,7 @@ def limpar_cache():
 
 
 def tamanho_cache():
-    """Devolve (arquivos, bytes) ocupados pelo cache."""
+    """Devolve (entradas em memoria, arquivos em disco, bytes em disco)."""
     arq = tam = 0
     try:
         for nome in os.listdir(CACHE_DIR):
@@ -128,7 +160,7 @@ def tamanho_cache():
                 tam += os.path.getsize(os.path.join(CACHE_DIR, nome))
     except Exception:
         pass
-    return arq, tam
+    return len(_MEMORIA), arq, tam
 
 
 # ==========================================
