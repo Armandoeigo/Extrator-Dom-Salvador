@@ -46,7 +46,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     
     with st.spinner(f"Buscando diários de {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}..."):
         
-        url_api = "https://api.queridodiario.ok.org.br/api/gazettes/"
+        url_api = "https://data.queridodiario.ok.org.br/api/gazettes/"
         
         # Paginação: Garante que pegamos todos os diários do período
         lista_diarios = []
