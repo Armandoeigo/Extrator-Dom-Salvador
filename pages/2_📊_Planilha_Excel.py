@@ -67,7 +67,7 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
         str_fim = data_fim.strftime("%Y-%m-%d")
         
         with st.spinner("Buscando diários no servidor..."):
-            url_api = "https://api.queridodiario.ok.org.br/api/gazettes/"
+            url_api = "https://data.queridodiario.ok.org.br/api/gazettes/"
             lista_diarios = []
             offset = 0 
             
