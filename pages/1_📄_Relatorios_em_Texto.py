@@ -47,9 +47,11 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     with st.spinner(f"Buscando diários de {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}..."):
         
         cabecalho = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
         }
-        url_api = "https://data.queridodiario.ok.org.br/api/gazettes/"
+        url_api = "https://api.queridodiario.ok.org.br/api/gazettes/"
         
         # Paginação: Garante que pegamos todos os diários do período
         lista_diarios = []
