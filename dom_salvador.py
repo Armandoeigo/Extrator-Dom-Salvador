@@ -28,7 +28,7 @@ Uso tipico:
     for b in blocos:
         print(b["edicao"], b["data"], b["texto"])
 
-Requer: requests, pymupdf
+Requer: requests, pymupdf, cloudscraper
 """
 
 import re
@@ -39,12 +39,16 @@ import hashlib
 import tempfile
 import requests
 import urllib3
+import cloudscraper
 
 # Desativa os avisos vermelhos de "InsecureRequest" na tela
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from datetime import date
 from concurrent.futures import ThreadPoolExecutor
+
+# Cria o motor antibloqueio para ser usado em todo o arquivo
+scraper = cloudscraper.create_scraper()
 
 # ATUALIZADO PARA HTTPS
 BASE = "https://www.dom.salvador.ba.gov.br"
@@ -177,8 +181,8 @@ def _get(url, tentativas=3):
     erro = None
     for n in range(tentativas):
         try:
-            # ATUALIZADO: verify=False adicionado
-            r = requests.get(url, headers=CABECALHO, timeout=60, verify=False)
+            # ATUALIZADO: verify=False adicionado e substituído por scraper
+            r = scraper.get(url, headers=CABECALHO, timeout=60, verify=False)
             r.raise_for_status()
             return r.text
         except Exception as e:
@@ -392,8 +396,8 @@ def extrair_secao(doc, secao="DECRETOS SIMPLES"):
 def baixar_texto(pdf_url):
     """Baixa o PDF e devolve o texto completo."""
     import fitz
-    # ATUALIZADO: verify=False adicionado
-    r = requests.get(pdf_url, headers=CABECALHO, timeout=120, verify=False)
+    # ATUALIZADO: verify=False adicionado e substituído por scraper
+    r = scraper.get(pdf_url, headers=CABECALHO, timeout=120, verify=False)
     r.raise_for_status()
     with fitz.open(stream=r.content, filetype="pdf") as doc:
         return "\n".join(p.get_text() for p in doc)
@@ -411,8 +415,8 @@ def _bloco(m, secao):
         return {**m, "texto": guardado["texto"], "metodo": guardado["metodo"]}
 
     try:
-        # ATUALIZADO: verify=False adicionado
-        r = requests.get(m["pdf_url"], headers=CABECALHO, timeout=120, verify=False)
+        # ATUALIZADO: verify=False adicionado e substituído por scraper
+        r = scraper.get(m["pdf_url"], headers=CABECALHO, timeout=120, verify=False)
         r.raise_for_status()
         with fitz.open(stream=r.content, filetype="pdf") as doc:
             texto, metodo = extrair_secao(doc, secao)
