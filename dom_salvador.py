@@ -3,7 +3,7 @@
 Acesso direto ao Diario Oficial do Municipio de Salvador (DOM).
 
 Alternativa a API do Querido Diario, lendo direto da fonte:
-http://www.dom.salvador.ba.gov.br
+https://www.dom.salvador.ba.gov.br
 
 O site e um Joomla. A categoria 1 lista todas as edicoes, da mais recente
 para a mais antiga, 20 por pagina. A pagina de cada edicao traz o link do
@@ -38,10 +38,16 @@ import time
 import hashlib
 import tempfile
 import requests
+import urllib3
+
+# Desativa os avisos vermelhos de "InsecureRequest" na tela
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 from datetime import date
 from concurrent.futures import ThreadPoolExecutor
 
-BASE = "http://www.dom.salvador.ba.gov.br"
+# ATUALIZADO PARA HTTPS
+BASE = "https://www.dom.salvador.ba.gov.br"
 POR_PAGINA = 20
 WORKERS = 8          # conexoes simultaneas; mantenha modesto por educacao
 
@@ -171,7 +177,8 @@ def _get(url, tentativas=3):
     erro = None
     for n in range(tentativas):
         try:
-            r = requests.get(url, headers=CABECALHO, timeout=60)
+            # ATUALIZADO: verify=False adicionado
+            r = requests.get(url, headers=CABECALHO, timeout=60, verify=False)
             r.raise_for_status()
             return r.text
         except Exception as e:
@@ -385,7 +392,8 @@ def extrair_secao(doc, secao="DECRETOS SIMPLES"):
 def baixar_texto(pdf_url):
     """Baixa o PDF e devolve o texto completo."""
     import fitz
-    r = requests.get(pdf_url, headers=CABECALHO, timeout=120)
+    # ATUALIZADO: verify=False adicionado
+    r = requests.get(pdf_url, headers=CABECALHO, timeout=120, verify=False)
     r.raise_for_status()
     with fitz.open(stream=r.content, filetype="pdf") as doc:
         return "\n".join(p.get_text() for p in doc)
@@ -403,7 +411,8 @@ def _bloco(m, secao):
         return {**m, "texto": guardado["texto"], "metodo": guardado["metodo"]}
 
     try:
-        r = requests.get(m["pdf_url"], headers=CABECALHO, timeout=120)
+        # ATUALIZADO: verify=False adicionado
+        r = requests.get(m["pdf_url"], headers=CABECALHO, timeout=120, verify=False)
         r.raise_for_status()
         with fitz.open(stream=r.content, filetype="pdf") as doc:
             texto, metodo = extrair_secao(doc, secao)
@@ -426,7 +435,7 @@ def buscar_decretos(data_inicio, data_fim, secao="DECRETOS SIMPLES",
     `progresso` e um callable opcional recebendo (feitos, total).
     """
     edicoes = buscar_por_periodo(data_inicio, data_fim, workers)
-    total, feitos, saida = len(edicoes), 0, []
+    total, feitos, saida = [] if not edicoes else len(edicoes), 0, []
 
     with ThreadPoolExecutor(workers) as ex:
         for r in ex.map(lambda m: _bloco(m, secao), edicoes):
