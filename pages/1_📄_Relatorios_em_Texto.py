@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import re
 import time
+import cloudscraper
 from datetime import datetime, date
 
 import dom_salvador as dom
@@ -120,7 +121,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     else:
         with st.spinner(f"Buscando diários de {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}..."):
             url_api = "https://api.queridodiario.ok.org.br/gazettes"
-
+            scraper = cloudscraper.create_scraper()
             lista_diarios = []
             offset = 0
 
@@ -135,7 +136,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                 }
 
                 try:
-                    resposta_api = requests.get(url_api, params=parametros, headers=cabecalho, timeout=60)
+                    resposta_api = scraper.get(url_api, params=parametros, headers=cabecalho, timeout=60)
                     resposta_api.raise_for_status()
                     dados = resposta_api.json()
 
@@ -169,7 +170,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
 
                 for i, diario in enumerate(lista_diarios):
                     try:
-                        texto_completo = requests.get(diario["txt_url"], headers=cabecalho, timeout=60).text
+                        texto_completo = scraper.get(diario["txt_url"], headers=cabecalho, timeout=60).text
 
                         numero_dom = diario.get("edition") or "Não identificado"
 
