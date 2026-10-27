@@ -453,8 +453,10 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                             leitor_csv = csv.reader(io.StringIO(conteudo_csv), delimiter=';')
 
                             for linha in leitor_csv:
-                                # Pula possíveis cabeçalhos de coluna que a IA tenha gerado sozinha
-                                se_cabeçalho = any("Ato" in str(campo) or "Nome" in str(campo) for campo in linha)
+                                # Pula o cabeçalho que a IA repete. Compara o campo
+                                # inteiro: o teste antigo ("contém Nome") descartava
+                                # toda linha de "Nomeação", que contém "Nome".
+                                se_cabeçalho = [str(c).strip().lower() for c in linha[:2]] == ["ato", "nome"]
 
                                 if len(linha) >= 2 and not se_cabeçalho:
                                     chave = chave_linha(linha)
