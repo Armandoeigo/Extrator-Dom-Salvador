@@ -1,5 +1,4 @@
 import streamlit as st
-import requests
 from google import genai
 from google.genai import errors as erros_ia
 import re
@@ -9,7 +8,7 @@ import hashlib
 import pandas as pd
 import io
 import csv
-from datetime import datetime, date
+from datetime import date
 
 import dom_salvador as dom
 
@@ -24,13 +23,8 @@ st.set_page_config(page_title="Extrator DOM com IA", page_icon="📊")
 
 # --- FONTE DOS DADOS ---
 st.sidebar.write("📡 **Fonte dos dados**")
-fonte = st.sidebar.radio(
-    "De onde buscar os diários:",
-    ["DOM direto (site oficial)", "Querido Diário (API)"],
-    help="O DOM direto lê do site da Prefeitura e já traz o número da edição, "
-         "o que dispensa uma das chamadas de IA por diário."
-)
-usar_dom = fonte.startswith("DOM")
+st.sidebar.caption("Site oficial do DOM. Se ele não responder, o Querido Diário "
+                   "entra automaticamente e o resultado avisa.")
 st.sidebar.markdown("---")
 
 # --- CONFIGURAÇÕES DA API ---
@@ -64,14 +58,10 @@ st.title("📊 Extrator Matemático: Cargos e Decretos")
 
 st.write("Selecione o período abaixo. A IA vai ignorar textos soltos e gerar uma **planilha de Excel** perfeita com os atos de pessoal (nomeações, exonerações, designações).")
 
-data_minima = date(2013, 1, 1) if usar_dom else date(2012, 6, 1)
-if usar_dom:
-    st.markdown("<span style='color:red'>**Atenção: Base de dados disponível desde 01/2013** "
-                "(antes disso o DOM era digitalizado, sem texto confiável)</span>",
-                unsafe_allow_html=True)
-else:
-    st.markdown("<span style='color:red'>**Atenção: Base de dados disponível desde 06/2012**</span>",
-                unsafe_allow_html=True)
+data_minima = date(2013, 1, 1)
+st.markdown("<span style='color:red'>**Atenção: Base de dados disponível desde 01/2013** "
+            "(antes disso o DOM era digitalizado, sem texto confiável)</span>",
+            unsafe_allow_html=True)
 
 data_maxima = date.today()
 
@@ -261,78 +251,34 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
         str_inicio = data_inicio.strftime("%Y-%m-%d")
         str_fim = data_fim.strftime("%Y-%m-%d")
 
-        # Lista comum às duas fontes. O texto do diário é baixado só na hora de
-        # processar, para não segurar centenas de PDFs na memória.
-        # {"data": date, "edicao": str|None, "pdf_url": str|None, "txt_url": str|None}
+        # O texto do diário é baixado só na hora de processar, para não
+        # segurar centenas de PDFs na memória.
+        # {"data": date, "edicao": str|None, "pdf_url": str}
         a_processar = []
         falha_api = False
 
-        # ------------------------------------------
-        # CAMINHO A: direto do site do DOM
-        # ------------------------------------------
-        if usar_dom:
-            with st.spinner("Buscando diários no site do DOM..."):
-                try:
-                    edicoes = dom.buscar_por_periodo(data_inicio, data_fim)
-                except Exception as e:
-                    falha_api = True
-                    edicoes = []
-                    st.error(f"Erro ao acessar o site do DOM: {e}")
-                    st.info("Confira se http://www.dom.salvador.ba.gov.br está no ar.")
+        with st.spinner("Buscando os diários do período..."):
+            try:
+                # Lê do site do DOM; se ele falhar, o módulo usa o Querido Diário sozinho
+                edicoes = dom.buscar_por_periodo(data_inicio, data_fim)
+            except Exception as e:
+                falha_api = True
+                edicoes = []
+                st.error(f"Não foi possível buscar os diários: {e}")
+                st.info("Nem o site do DOM nem o Querido Diário responderam. Tente de novo em alguns minutos.")
 
-                for m in edicoes:
-                    a_processar.append({
-                        "data": m["data"],
-                        "edicao": str(m["edicao"]),   # vem de graça no nome do PDF
-                        "pdf_url": m["pdf_url"],
-                        "txt_url": None,
-                    })
+            motivo = next((m["falha_dom"] for m in edicoes if m.get("falha_dom")), None)
+            if motivo:
+                st.warning("O site do DOM não respondeu; os dados vieram do Querido Diário.")
+                st.caption(f"Motivo técnico: {motivo}")
 
-        # ------------------------------------------
-        # CAMINHO B: API do Querido Diário
-        # ------------------------------------------
-        else:
-            with st.spinner("Buscando diários no servidor..."):
-                url_api = "https://api.queridodiario.ok.org.br/gazettes"
-                lista_diarios = []
-                offset = 0
-
-                while True:
-                    parametros = {
-                        "territory_ids": "2927408",
-                        "querystring": '"DECRETOS NUMERADOS"',
-                        "published_since": str_inicio,
-                        "published_until": str_fim,
-                        "size": 50,
-                        "offset": offset
-                    }
-                    try:
-                        resposta_api = requests.get(url_api, params=parametros, timeout=60)
-                        resposta_api.raise_for_status()
-                        dados = resposta_api.json()
-                        if "gazettes" in dados and len(dados["gazettes"]) > 0:
-                            lista_diarios.extend(dados["gazettes"])
-                            offset += 50
-                            # Para assim que já baixamos tudo que a API declara ter
-                            if offset >= dados.get("total_gazettes", 0):
-                                break
-                            time.sleep(1)  # Freio ABS para o servidor do Querido Diário não bloquear
-                        else:
-                            break
-                    except Exception as e:
-                        falha_api = True
-                        st.error(f"Erro ao consultar a API do Querido Diário: {e}")
-                        st.info("Se o erro persistir, troque a fonte para **DOM direto** na barra lateral — "
-                                "a API do Querido Diário sai do ar com alguma frequência.")
-                        break
-
-                for diario in sorted(lista_diarios, key=lambda x: x["date"]):
-                    a_processar.append({
-                        "data": datetime.strptime(diario["date"], "%Y-%m-%d").date(),
-                        "edicao": diario.get("edition"),  # pode vir vazio; a IA resolve
-                        "pdf_url": None,
-                        "txt_url": diario["txt_url"],
-                    })
+            for m in edicoes:
+                a_processar.append({
+                    "data": m["data"],
+                    # Pelo DOM vem no nome do PDF; pelo Querido Diário, sai do cabeçalho
+                    "edicao": str(m["edicao"]) if m.get("edicao") else None,
+                    "pdf_url": m["pdf_url"],
+                })
 
         # ==========================================
         # 3. PROCESSAMENTO PELA IA
@@ -353,10 +299,7 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
             for i, item in enumerate(a_processar):
                 try:
                     # Baixa o texto do diário agora (não antes, para poupar memória)
-                    if item["pdf_url"]:
-                        texto_completo = dom.baixar_texto(item["pdf_url"])
-                    else:
-                        texto_completo = requests.get(item["txt_url"], timeout=60).text
+                    texto_completo = dom.baixar_texto(item["pdf_url"])
 
                     texto_secao = cortar_trecho(texto_completo)
                     if not texto_secao:
@@ -365,6 +308,10 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                         continue
 
                     num_dom = item.get("edicao")
+                    if not num_dom:
+                        # Querido Diário: lê do cabeçalho "ANO ... | Nº 9.339" antes de gastar IA
+                        achado = dom.edicao_do_texto(texto_completo)
+                        num_dom = str(achado) if achado else None
 
                     # Só chama a IA para descobrir a edição quando ela não veio na fonte.
                     # Pelo DOM direto o número está no nome do arquivo, o que corta
@@ -444,8 +391,10 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                             leitor_csv = csv.reader(io.StringIO(conteudo_csv), delimiter=';')
 
                             for linha in leitor_csv:
-                                # Pula possíveis cabeçalhos de coluna que a IA tenha gerado sozinha
-                                se_cabeçalho = any("Ato" in str(campo) or "Nome" in str(campo) for campo in linha)
+                                # Pula o cabeçalho que a IA repete. Compara o campo
+                                # inteiro: o teste antigo ("contém Nome") descartava
+                                # toda linha de "Nomeação", que contém "Nome".
+                                se_cabeçalho = [str(c).strip().lower() for c in linha[:2]] == ["ato", "nome"]
 
                                 if len(linha) >= 2 and not se_cabeçalho:
                                     chave = chave_linha(linha)
