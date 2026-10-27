@@ -280,6 +280,9 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                     st.error(f"Erro ao acessar o site do DOM: {e}")
                     st.info("Confira se http://www.dom.salvador.ba.gov.br está no ar.")
 
+                if any(m.get("fonte") == "qd" for m in edicoes):
+                    st.warning("O site do DOM não respondeu; os dados vieram do Querido Diário.")
+
                 for m in edicoes:
                     a_processar.append({
                         "data": m["data"],
@@ -293,7 +296,7 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
         # ------------------------------------------
         else:
             with st.spinner("Buscando diários no servidor..."):
-                url_api = "https://api.queridodiario.ok.org.br/gazettes"
+                url_api = f"{dom.QD_API}/gazettes"   # host novo desde ago/2026
                 lista_diarios = []
                 offset = 0
 
