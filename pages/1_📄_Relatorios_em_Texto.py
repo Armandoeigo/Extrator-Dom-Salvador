@@ -87,6 +87,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     achados = []
     sem_bloco = 0
     falha_api = False
+    fonte_real = fonte   # muda se o DOM falhar e o módulo usar o Querido Diário
 
     # ------------------------------------------
     # CAMINHO A: direto do site do DOM
@@ -105,8 +106,11 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                 st.error(f"Erro ao acessar o site do DOM: {e}")
                 st.info("Confira se http://www.dom.salvador.ba.gov.br está no ar.")
 
-            if any(b.get("fonte") == "qd" for b in blocos):
+            motivo = next((b["falha_dom"] for b in blocos if b.get("falha_dom")), None)
+            if motivo:
+                fonte_real = "Querido Diário (o site do DOM não respondeu)"
                 st.warning("O site do DOM não respondeu; os dados vieram do Querido Diário.")
+                st.caption(f"Motivo técnico: {motivo}")
 
             for b in blocos:
                 if b.get("erro"):
@@ -114,7 +118,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                     continue
                 achados.append({
                     "data": b["data"],
-                    "edicao": str(b["edicao"]),
+                    "edicao": str(b["edicao"] or "Não identificado"),
                     "conteudo": b["texto"],
                 })
 
@@ -175,7 +179,8 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                     try:
                         texto_completo = scraper.get(diario["txt_url"], headers=cabecalho, timeout=60).text
 
-                        numero_dom = diario.get("edition") or "Não identificado"
+                        numero_dom = (diario.get("edition") or dom.edicao_do_texto(texto_completo)
+                                      or "Não identificado")
 
                         blocos = re.findall(padrao, texto_completo, re.DOTALL)
                         if blocos:
@@ -200,7 +205,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
 
         texto_para_salvar = "RELATÓRIO DE DECRETOS SIMPLES - SALVADOR\n"
         texto_para_salvar += f"PERÍODO: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}\n"
-        texto_para_salvar += f"FONTE: {fonte}\n"
+        texto_para_salvar += f"FONTE: {fonte_real}\n"
         texto_para_salvar += f"GERADO EM: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
         texto_para_salvar += "=" * 60 + "\n\n"
 

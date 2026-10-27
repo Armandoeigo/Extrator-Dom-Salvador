@@ -38,6 +38,11 @@ O que mudou nesta versao (out/2026)
   data.queridodiario.ok.org.br.
 * diagnosticar(): roda passo a passo e diz onde quebra. Na linha de
   comando: `python dom_salvador.py`.
+* Edicao: o Querido Diario costuma vir sem numero de edicao para Salvador.
+  Agora o numero sai do cabecalho da capa ("ANO XXXIX | Nº 9.339"), via
+  edicao_do_texto(); antes saia um codigo provisorio tipo "83131c10f1".
+  Quando o DOM falha e o modulo usa o QD, cada item traz "falha_dom" com o
+  motivo.
 
 Uso tipico:
 
@@ -737,10 +742,12 @@ def buscar_por_periodo_qd(data_inicio, data_fim, territorio=QD_SALVADOR):
             "size": tamanho, "offset": offset, "sort_by": "ascending_date"})
         lote = dados.get("gazettes") or []
         for g in lote:
-            ed = str(g.get("edition") or "").strip()
-            ed = int(ed) if ed.isdigit() else (ed or None)
+            # O QD costuma deixar "edition" vazio para Salvador; nesse caso o
+            # numero sai do cabecalho do PDF, quando ele for aberto
+            digitos = re.sub(r"\D", "", str(g.get("edition") or ""))
+            ed = int(digitos) if digitos and _EDICAO_MIN <= int(digitos) <= _EDICAO_MAX else None
             achados.append({
-                "edicao": ed if ed is not None else hashlib.sha1(g["url"].encode()).hexdigest()[:10],
+                "edicao": ed,
                 "data": date.fromisoformat(g["date"][:10]),
                 "pdf_url": g["url"],
                 "txt_url": g.get("txt_url"),
@@ -778,8 +785,11 @@ def buscar_por_periodo(data_inicio, data_fim, workers=WORKERS, fonte=None):
         if fonte == "dom":
             raise
         log.warning("site do DOM falhou (%s); tentando o Querido Diario", e)
+        motivo = f"{type(e).__name__}: {e}"[:400]
         try:
-            return buscar_por_periodo_qd(data_inicio, data_fim)
+            # cada item leva o motivo, para a pagina poder mostrar o porque
+            return [{**m, "falha_dom": motivo}
+                    for m in buscar_por_periodo_qd(data_inicio, data_fim)]
         except FonteIndisponivel as e2:
             raise FonteIndisponivel(
                 f"As duas fontes falharam.\n  DOM: {e}\n  Querido Diario: {e2}") from e2
@@ -802,6 +812,30 @@ _PARADA = (r"\n\s*(?:SECRETARIA|GABINETE|PROCURADORIA|CONTROLADORIA|"
 def _limpar(t):
     t = _RE_CABECALHO_PAG.sub("\n", t)
     return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
+# Numero da edicao no cabecalho da capa: "ANO XXXIX | Nº 9.339".
+# Os padroes ficam presos ao cabecalho de proposito: um "Nº 42.453" solto no
+# texto e numero de decreto, nao de edicao.
+_EDICAO_MIN, _EDICAO_MAX = 1000, 99999
+_NUM = r"N\s*[º°ºoO]?\s*\.?\s*(\d{1,2}\.?\d{3})(?!\d)"
+_RE_EDICAO_TEXTO = (
+    re.compile(r"ANO\s+[IVXLCDM]+\s*[|\-–—]?\s*" + _NUM, re.I),
+    re.compile(r"SALVADOR\s*[-–]?\s*BAHIA[\s|,\-–—]{0,10}" + _NUM, re.I),
+    re.compile(r"EDI[ÇC][ÃA]O\s+(?:EXTRA\s+)?" + _NUM, re.I),
+)
+
+
+def edicao_do_texto(texto):
+    """Numero da edicao lido do cabecalho do diario (int), ou None."""
+    inicio = (texto or "")[:3000]
+    for rx in _RE_EDICAO_TEXTO:
+        m = rx.search(inicio)
+        if m:
+            n = int(m.group(1).replace(".", ""))
+            if _EDICAO_MIN <= n <= _EDICAO_MAX:
+                return n
+    return None
 
 
 def _achar_titulo(texto, nome):
@@ -907,18 +941,21 @@ def baixar_texto(pdf_url):
 def _bloco(m, secao):
     # O cache guarda inclusive o resultado negativo ("esta edicao nao tem a
     # secao"), que tambem custou um PDF inteiro para ser descoberto.
-    chave = f"bloco:{m['edicao']}:{secao}"
+    # Sem numero de edicao (Querido Diario), a chave e o proprio PDF
+    chave = f"bloco:{m['edicao'] or m['pdf_url']}:{secao}"
     guardado = _ler_cache(chave)
     if guardado is not None:
         if not guardado.get("texto"):
             return None
-        return {**m, "texto": guardado["texto"], "metodo": guardado["metodo"]}
+        return {**m, "edicao": m["edicao"] or guardado.get("edicao"),
+                "texto": guardado["texto"], "metodo": guardado["metodo"]}
 
     try:
         with _abrir_pdf(_baixar_pdf(m["pdf_url"])) as doc:
             texto, metodo = extrair_secao(doc, secao)
-        _gravar_cache(chave, {"texto": texto, "metodo": metodo})
-        return {**m, "texto": texto, "metodo": metodo} if texto else None
+            edicao = m["edicao"] or edicao_do_texto(doc[0].get_text() if doc.page_count else "")
+        _gravar_cache(chave, {"texto": texto, "metodo": metodo, "edicao": edicao})
+        return {**m, "edicao": edicao, "texto": texto, "metodo": metodo} if texto else None
     except Exception as e:
         # Falha de rede nao vai para o cache: da proxima vez tentamos de novo
         return {**m, "texto": None, "metodo": None,

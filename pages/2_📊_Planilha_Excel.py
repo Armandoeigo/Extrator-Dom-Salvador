@@ -280,13 +280,15 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                     st.error(f"Erro ao acessar o site do DOM: {e}")
                     st.info("Confira se http://www.dom.salvador.ba.gov.br está no ar.")
 
-                if any(m.get("fonte") == "qd" for m in edicoes):
+                motivo = next((m["falha_dom"] for m in edicoes if m.get("falha_dom")), None)
+                if motivo:
                     st.warning("O site do DOM não respondeu; os dados vieram do Querido Diário.")
+                    st.caption(f"Motivo técnico: {motivo}")
 
                 for m in edicoes:
                     a_processar.append({
                         "data": m["data"],
-                        "edicao": str(m["edicao"]),   # vem de graça no nome do PDF
+                        "edicao": str(m["edicao"]) if m.get("edicao") else None,   # vem no nome do PDF
                         "pdf_url": m["pdf_url"],
                         "txt_url": None,
                     })
@@ -368,6 +370,10 @@ if st.button("🚀 Buscar e Gerar Planilha Excel"):
                         continue
 
                     num_dom = item.get("edicao")
+                    if not num_dom:
+                        # Querido Diário: lê do cabeçalho "ANO ... | Nº 9.339" antes de gastar IA
+                        achado = dom.edicao_do_texto(texto_completo)
+                        num_dom = str(achado) if achado else None
 
                     # Só chama a IA para descobrir a edição quando ela não veio na fonte.
                     # Pelo DOM direto o número está no nome do arquivo, o que corta
