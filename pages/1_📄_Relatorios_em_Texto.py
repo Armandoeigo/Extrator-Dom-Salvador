@@ -105,6 +105,9 @@ if st.button("🚀 Buscar e Gerar Relatório"):
                 st.error(f"Erro ao acessar o site do DOM: {e}")
                 st.info("Confira se http://www.dom.salvador.ba.gov.br está no ar.")
 
+            if any(b.get("fonte") == "qd" for b in blocos):
+                st.warning("O site do DOM não respondeu; os dados vieram do Querido Diário.")
+
             for b in blocos:
                 if b.get("erro"):
                     sem_bloco += 1
@@ -120,7 +123,7 @@ if st.button("🚀 Buscar e Gerar Relatório"):
     # ------------------------------------------
     else:
         with st.spinner(f"Buscando diários de {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}..."):
-            url_api = "https://api.queridodiario.ok.org.br/gazettes"
+            url_api = f"{dom.QD_API}/gazettes"   # host novo desde ago/2026
             scraper = cloudscraper.create_scraper()
             lista_diarios = []
             offset = 0
