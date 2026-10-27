@@ -104,6 +104,10 @@ except Exception:
 
 log = logging.getLogger("dom_salvador")
 
+# Mostrado na barra lateral do app: confirma que a versao nova ja entrou no ar.
+# Atualize a cada mudanca que precise ser conferida no Streamlit.
+VERSAO = "27/10/2026 · https→http"
+
 BASE = os.environ.get("DOM_BASE", "https://www.dom.salvador.ba.gov.br").rstrip("/")
 POR_PAGINA = 20
 WORKERS = int(os.environ.get("DOM_WORKERS", "4"))   # mantenha modesto por educacao
