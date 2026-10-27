@@ -38,6 +38,8 @@ O que mudou nesta versao (out/2026)
   data.queridodiario.ok.org.br.
 * diagnosticar(): roda passo a passo e diz onde quebra. Na linha de
   comando: `python dom_salvador.py`.
+* https -> http: quando o https do site recusa a conexao, o modulo passa
+  a usar http:// (o navegador faz o mesmo e mostra "Nao seguro").
 * Edicao: o Querido Diario costuma vir sem numero de edicao para Salvador.
   Agora o numero sai do cabecalho da capa ("ANO XXXIX | Nº 9.339"), via
   edicao_do_texto(); antes saia um codigo provisorio tipo "83131c10f1".
@@ -83,7 +85,7 @@ import logging
 import tempfile
 import threading
 from datetime import date
-from urllib.parse import urljoin, unquote
+from urllib.parse import urljoin, unquote, urlsplit, urlunsplit
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -338,6 +340,30 @@ def _texto(r):
         return ""
 
 
+_HOST_DOM = urlsplit(BASE).netloc.lower()
+_usar_http = False      # liga quando o https do DOM nao conecta
+
+
+def _para_http(url):
+    """A mesma URL do DOM em http://, ou None se ela nao for https do DOM."""
+    p = urlsplit(url)
+    if p.scheme == "https" and p.netloc.lower() == _HOST_DOM:
+        return urlunsplit(p._replace(scheme="http"))
+    return None
+
+
+_SINAIS_SEM_CONEXAO = (
+    "curl: (7)", "curl: (28)", "curl: (35)", "failed to connect", "could not connect",
+    "connection refused", "newconnectionerror", "connecttimeout", "connect timeout",
+    "connection timed out", "max retries exceeded",
+)
+
+
+def _eh_falha_conexao(e):
+    s = str(e).lower()
+    return any(x in s for x in _SINAIS_SEM_CONEXAO)
+
+
 def _eh_erro_ssl(e):
     s = str(e).lower()
     return ("ssl" in s or "certificate" in s or "curl: (60)" in s
@@ -354,10 +380,12 @@ def _espera_retry_after(r, padrao):
 
 def _requisitar(url, timeout=(15, 60), tentativas=3, binario=False, sessao=None):
     """GET com tentativas, backoff e deteccao de bloqueio. Devolve a resposta."""
-    global _verificar_ssl
+    global _verificar_ssl, _usar_http
     s = sessao or _sessao()
-    erro, n = None, 0
+    erro, erro_https, n = None, None, 0
     while n < tentativas:
+        if _usar_http:
+            url = _para_http(url) or url
         if PAUSA:
             time.sleep(PAUSA * random.uniform(0.5, 1.5))
         try:
@@ -369,6 +397,14 @@ def _requisitar(url, timeout=(15, 60), tentativas=3, binario=False, sessao=None)
                 # verify=False da versao anterior); segue sem verificar
                 _verificar_ssl = False
                 log.warning("certificado de %s nao validou; seguindo sem verificar SSL", url)
+                continue
+            if (not _usar_http and not _SSL_EXIGIDO and _para_http(url)
+                    and (_eh_falha_conexao(e) or _eh_erro_ssl(e))):
+                # O https do DOM as vezes recusa a conexao (porta 443) enquanto
+                # o http responde -- e o "Nao seguro" que o navegador mostra.
+                # Passa a usar http para todas as requisicoes do DOM.
+                _usar_http, erro_https = True, e
+                log.warning("https de %s nao conectou (%s); tentando http", _HOST_DOM, str(e)[:160])
                 continue
             erro = e
             n += 1
@@ -401,7 +437,8 @@ def _requisitar(url, timeout=(15, 60), tentativas=3, binario=False, sessao=None)
 
     if isinstance(erro, SiteBloqueado):
         raise SiteBloqueado(f"{erro} (persistiu apos {tentativas} tentativas)")
-    raise RuntimeError(f"Falha ao acessar {url}: {erro}")
+    antes = f" (antes, pelo https: {erro_https})" if erro_https else ""
+    raise RuntimeError(f"Falha ao acessar {url}: {erro}{antes}")
 
 
 def _get(url, tentativas=3):
@@ -1037,6 +1074,7 @@ def diagnosticar(pasta=None, imprimir=True):
                   f'titulo="{_titulo(t)}"')
             if itens and not melhor:
                 melhor = (motor, itens)
+                diz(f"     protocolo: {'http (o https nao conectou)' if _usar_http else 'https'}")
             if not itens:
                 amostra = sorted(set(re.findall(r"""href=["']([^"']*(?:dom|pdf|id=)[^"']*)["']""", t, re.I)))[:12]
                 diz("     links com 'dom'/'pdf'/'id=' na pagina: " + (", ".join(amostra) or "nenhum"))
