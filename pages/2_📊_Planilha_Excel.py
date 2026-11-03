@@ -53,6 +53,8 @@ pausa_ia = st.sidebar.slider(
     help="A conta gratuita do Gemini limita as chamadas por minuto. Se você tem "
          "cota paga, pode reduzir bastante e acelerar períodos longos."
 )
+st.sidebar.markdown("---")
+st.sidebar.caption(f"Versão: {dom.VERSAO}")
 
 st.title("📊 Extrator Matemático: Cargos e Decretos")
 

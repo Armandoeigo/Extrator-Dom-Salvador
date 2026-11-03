@@ -24,6 +24,7 @@ st.sidebar.write("⚙️ **Modo: Texto Rápido**")
 st.sidebar.write("Esta ferramenta utiliza extração estruturada simples. Como ela não utiliza a Inteligência Artificial, **não é necessário inserir nenhuma API Key** nesta página.")
 st.sidebar.success("Pronto para uso imediato!")
 st.sidebar.markdown("---")
+st.sidebar.caption(f"Versão: {dom.VERSAO}")
 
 st.title("🔍 Extrator de Decretos Simples")
 st.write("Selecione o período abaixo para buscar os Decretos Simples no Diário Oficial de Salvador.")
